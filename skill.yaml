@@ -1,0 +1,131 @@
+name: clinch
+version: 0.2.0
+description: >
+  Clinch Protocol — lets your AI agent negotiate deals, schedules, and
+  service agreements with other AI agents on your behalf. Supports both 
+  Buyer Mode (making offers) and Seller Mode (hosting an endpoint and 
+  receiving/countering offers autonomously).
+author: clinch-protocol
+homepage: https://github.com/clinch-protocol/clinch-core
+tags: [negotiation, agents, protocol, automation, commerce, scheduling]
+
+permissions:
+  shell: true          # To invoke the clinch CLI and daemon
+  network: true        # To receive webhook callbacks from the registry
+  notifications: true  # To alert user when approval is needed
+  storage: true        # To read/write ~/.clinch config and state
+
+entrypoint: index.ts
+
+# Webhook endpoint this skill exposes inside OpenClaw
+webhook:
+  path: /clinch/callback
+
+env:
+  - CLINCH_PASSPHRASE    # Required to unlock the local cryptographic vault
+
+tools:
+  # ==========================================
+  # BUYER / GENERAL COMMANDS
+  # ==========================================
+  - name: clinch_negotiate
+    description: >
+      Start a negotiation. Describe what you want in plain language — the agent 
+      extracts intent, finds matching sellers, and opens a negotiation.
+    parameters:
+      type: object
+      required: [intent]
+      properties:
+        intent:
+          type: string
+          description: Natural language description (e.g., "buy a .io domain for under $20")
+        target:
+          type: string
+          description: Optional. Specific seller node agent_id to target.
+
+  - name: clinch_status
+    description: List all active (non-signed, non-cancelled) negotiations.
+    parameters:
+      type: object
+      properties: {}
+
+  - name: clinch_deals
+    description: List all completed, cryptographically signed deals.
+    parameters:
+      type: object
+      properties: {}
+
+  - name: clinch_counter
+    description: Counter a seller's offer with a new price.
+    parameters:
+      type: object
+      required: [session_id, price]
+      properties:
+        session_id:
+          type: string
+        price:
+          type: number
+        reason:
+          type: string
+
+  - name: clinch_approve
+    description: >
+      Cryptographically sign and commit a CONFIRMED deal. 
+      Requires explicit user confirmation.
+    parameters:
+      type: object
+      required: [session_id]
+      properties:
+        session_id:
+          type: string
+
+  - name: clinch_cancel
+    description: Cleanly exit a negotiation before signing.
+    parameters:
+      type: object
+      required: [session_id]
+      properties:
+        session_id:
+          type: string
+
+  # ==========================================
+  # SELLER / NODE MANAGEMENT COMMANDS
+  # ==========================================
+  - name: clinch_config
+    description: Configure the node's mode (buyer, seller, or both).
+    parameters:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [buyer, seller, both]
+
+  - name: clinch_node_register
+    description: >
+      Register this node's endpoint with the registry so buyers can find it.
+    parameters:
+      type: object
+      required: [endpoint, categories]
+      properties:
+        endpoint:
+          type: string
+          description: The public HTTP URL where the seller node is reachable.
+        categories:
+          type: string
+          description: Comma-separated list of categories (e.g., "domains,services")
+
+  - name: clinch_serve
+    description: >
+      Start the Seller HTTP server in the background to automatically receive 
+      and counter incoming proposals based on local configuration.
+    parameters:
+      type: object
+      required: [port]
+      properties:
+        port:
+          type: number
+          description: The local port to listen on (default 8080).
+        config_path:
+          type: string
+          description: Optional path to a JSON file containing seller floor/approve logic.

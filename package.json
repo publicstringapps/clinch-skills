@@ -1,0 +1,15 @@
+{
+  "name": "@clinch-protocol/openclaw-skill",
+  "version": "0.2.0",
+  "description": "Clinch Protocol skill for OpenClaw — AI agent negotiation (Buyer & Seller Duality)",
+  "main": "index.ts",
+  "keywords": ["openclaw", "skill", "clinch", "negotiation", "agents", "protocol", "commerce"],
+  "author": "clinch-protocol",
+  "license": "MIT",
+  "dependencies": {
+    "agent-clinch": "latest"
+  },
+  "peerDependencies": {
+    "@openclaw/skill-sdk": "*"
+  }
+}
