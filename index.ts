@@ -6,7 +6,7 @@
  * and maps every CLI command to the OpenClaw agent's toolbelt.
  */
 
-import { exec, spawn } from "child_process";
+import { execFile, spawn } from "child_process";
 import { promisify } from "util";
 import type {
   SkillContext,
@@ -15,7 +15,7 @@ import type {
   WebhookPayload,
 } from "@openclaw/skill-sdk";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 const CLI_PACKAGE = "agent-clinch";
 const CLI_BIN = "clinch";
@@ -30,7 +30,7 @@ export async function onLoad(ctx: SkillContext): Promise<void> {
   await ensureCLIInstalled(ctx);
 
   if (ctx.webhookUrl) {
-    await runCLI(["config", "--webhook", `"${ctx.webhookUrl}"`], ctx);
+    await runCLI(["config", "--webhook", ctx.webhookUrl], ctx);
     ctx.log(`Registered native OpenClaw webhook with Clinch: ${ctx.webhookUrl}`);
   }
 
@@ -81,10 +81,11 @@ export async function onToolCall(
 // ============================================================================
 
 async function negotiate(
-  params: { intent: string; target?: string },
+  params: { constraints_json: string; target?: string },
   ctx: SkillContext
 ): Promise<ToolResult> {
-  const args = ["negotiate", `"${params.intent}"`, "--direct"];
+  // Pass the raw JSON string straight to the CLI
+  const args = ["negotiate", params.constraints_json, "--direct"];
   if (params.target) args.push("--target", params.target);
 
   const result = await runCLI(args, ctx);
@@ -108,7 +109,7 @@ async function counter(
   ctx: SkillContext
 ): Promise<ToolResult> {
   const args = ["counter", params.session_id, params.price.toString(), "--direct"];
-  if (params.reason) args.push("--reason", `"${params.reason}"`);
+  if (params.reason) args.push("--reason", params.reason);
 
   const result = await runCLI(args, ctx);
   if (result.error) return result;
@@ -134,7 +135,7 @@ async function registerNode(
   params: { endpoint: string; categories: string },
   ctx: SkillContext
 ): Promise<ToolResult> {
-  const args = ["node-register", params.endpoint, "--categories", `"${params.categories}"`];
+  const args = ["node-register", params.endpoint, "--categories", params.categories];
   return runCLI(args, ctx);
 }
 
@@ -200,6 +201,9 @@ export async function onWebhook(
 // INTERNAL EXECUTION HELPERS
 // ============================================================================
 
+/**
+ * Execute the Clinch CLI using execFile for safe argument parsing
+ */
 async function runCLI(args: string[], ctx: SkillContext): Promise<Record<string, any>> {
   const passphrase = process.env.CLINCH_PASSPHRASE;
   
@@ -211,13 +215,13 @@ async function runCLI(args: string[], ctx: SkillContext): Promise<Record<string,
   }
 
   try {
-    const { stdout } = await execAsync(`${CLI_BIN} ${args.join(" ")}`, {
+    const { stdout } = await execFileAsync(CLI_BIN, args, {
       env: { ...process.env, CLINCH_PASSPHRASE: passphrase },
-      timeout: 45000, // 45s to accommodate PoW on cold starts
+      timeout: 45000, 
     });
 
     try { return JSON.parse(stdout.trim()); } 
-    catch { return { status: "SUCCESS", output: stdout.trim() }; } // Fallback for non-JSON commands like `config`
+    catch { return { status: "SUCCESS", output: stdout.trim() }; } 
     
   } catch (err: any) {
     const stderr = err.stderr || "";
@@ -239,11 +243,11 @@ function requiresVault(args: string[]): boolean {
 
 async function ensureCLIInstalled(ctx: SkillContext): Promise<void> {
   try {
-    await execAsync(`which ${CLI_BIN}`);
+    await execFileAsync("which", [CLI_BIN]);
   } catch {
     ctx.log("clinch-cli not found. Installing...");
     try {
-      await execAsync(`npm install -g ${CLI_PACKAGE}`);
+      await execFileAsync("npm", ["install", "-g", CLI_PACKAGE]);
       ctx.log("clinch-cli installed.");
     } catch (e) {
       ctx.log(`Failed to install clinch-cli. Install manually: npm install -g ${CLI_PACKAGE}`);
@@ -251,13 +255,9 @@ async function ensureCLIInstalled(ctx: SkillContext): Promise<void> {
   }
 }
 
-/**
- * Spawns long-running CLI processes (like `start` and `serve`) detached from 
- * the Node event loop so they survive and don't block OpenClaw.
- */
 function startBackgroundProcess(command: string, args: string[], ctx: SkillContext): void {
   const passphrase = process.env.CLINCH_PASSPHRASE;
-  if (!passphrase) return; // Cannot start daemon without unlocked vault
+  if (!passphrase) return; 
 
   const child = spawn(CLI_BIN, [command, ...args], {
     detached: true,

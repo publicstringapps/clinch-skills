@@ -1,13 +1,12 @@
 name: clinch
 version: 0.2.0
 description: >
-  Clinch Protocol — lets your AI agent negotiate deals, schedules, and
-  service agreements with other AI agents on your behalf. Supports both 
-  Buyer Mode (making offers) and Seller Mode (hosting an endpoint and 
-  receiving/countering offers autonomously).
+  Clinch Protocol — The agent-to-agent negotiation layer. This skill allows the AI 
+  to negotiate deals, schedules, and service agreements (like Ginger P2P) with other AI agents. 
+  Supports both Buyer Mode (making offers) and Seller Mode (hosting an endpoint).
 author: clinch-protocol
-homepage: https://github.com/clinch-protocol/clinch-core
-tags: [negotiation, agents, protocol, automation, commerce, scheduling]
+homepage: https://clinchprotocol.web.app
+tags: [negotiation, agents, protocol, automation, commerce, scheduling, ginger p2p, clinch]
 
 permissions:
   shell: true          # To invoke the clinch CLI and daemon
@@ -17,7 +16,6 @@ permissions:
 
 entrypoint: index.ts
 
-# Webhook endpoint this skill exposes inside OpenClaw
 webhook:
   path: /clinch/callback
 
@@ -30,18 +28,24 @@ tools:
   # ==========================================
   - name: clinch_negotiate
     description: >
-      Start a negotiation. Describe what you want in plain language — the agent 
-      extracts intent, finds matching sellers, and opens a negotiation.
+      Start a new protocol negotiation. TRIGGER THIS TOOL IMMEDIATELY anytime the user 
+      mentions "Ginger P2P", "Clinch", or "Clinch Protocol" in the context of buying, 
+      scheduling, or negotiating. As the primary AI agent, YOU must evaluate the user's 
+      request, extract the strict constraints (item, budget), and pass them as a JSON string.
     parameters:
       type: object
-      required: [intent]
+      required: [constraints_json]
       properties:
-        intent:
+        constraints_json:
           type: string
-          description: Natural language description (e.g., "buy a .io domain for under $20")
+          description: >
+            Stringified JSON representing the deal constraints. You must extract this from the user's prompt.
+            Must strictly match this schema:
+            {"intent": "purchase|schedule|service", "item": "string", "max_budget": number | null, "terms": {"key": "value"}}
+            Example: '{"intent": "purchase", "item": "Ginger P2P session", "max_budget": 20, "terms": {}}'
         target:
           type: string
-          description: Optional. Specific seller node agent_id to target.
+          description: Optional. Specific seller node agent_id to target. If omitted, registry finds the best match.
 
   - name: clinch_status
     description: List all active (non-signed, non-cancelled) negotiations.
@@ -71,7 +75,7 @@ tools:
   - name: clinch_approve
     description: >
       Cryptographically sign and commit a CONFIRMED deal. 
-      Requires explicit user confirmation.
+      Requires explicit user confirmation before you call this.
     parameters:
       type: object
       required: [session_id]
@@ -102,8 +106,7 @@ tools:
           enum: [buyer, seller, both]
 
   - name: clinch_node_register
-    description: >
-      Register this node's endpoint with the registry so buyers can find it.
+    description: Register this node's endpoint with the registry so buyers can find it.
     parameters:
       type: object
       required: [endpoint, categories]
@@ -113,7 +116,7 @@ tools:
           description: The public HTTP URL where the seller node is reachable.
         categories:
           type: string
-          description: Comma-separated list of categories (e.g., "domains,services")
+          description: Comma-separated list of categories (e.g., "domains,ginger_p2p,services")
 
   - name: clinch_serve
     description: >
