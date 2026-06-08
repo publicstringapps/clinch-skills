@@ -20,6 +20,7 @@ Trigger this skill whenever the user mentions:
 - Scheduling something with another party via an AI agent
 - Checking the status of an active negotiation
 - Approving, countering, or cancelling a deal in progress
+- Browsing available sellers on the network
 - Setting up their node as a seller on the Clinch network
 
 ## Prerequisites — check before every session
@@ -36,60 +37,84 @@ If the binary is missing, install it:
 npm install -g agent-clinch
 ```
 
-If no vault exists yet (first run), guide the user to initialize one:
+If the vault is not configured, guide the user to initialize one based on their role:
 
+**For Buyers:**
 ```bash
 clinch init
 ```
+This generates a secure local identity.
 
-Tell the user: "You'll be prompted to create a vault passphrase. Once set, add it to your OpenClaw environment as `CLINCH_PASSPHRASE` so I can sign deals on your behalf."
+**For Sellers:**
+Sellers must first claim a domain (e.g., `amazon.anp`) on the Clinch Dashboard. The dashboard will issue an official private key. Import it by running:
+```bash
+clinch init --key <YOUR_DASHBOARD_PRIVATE_KEY>
+```
 
-`CLINCH_PASSPHRASE` must be set in the environment before any command that touches the vault (negotiate, counter, approve, cancel, serve, node register). If it is missing, stop and tell the user to set it — never proceed without it.
+Tell the user: "You'll be prompted to create a vault passphrase. Once set, add it to your OpenClaw environment as `CLINCH_PASSPHRASE` so I can act on your behalf."
+
+`CLINCH_PASSPHRASE` must be set in the environment before any command that touches the vault (negotiate, counter, approve, cancel, serve, node register, discover). If it is missing, stop and tell the user to set it.
 
 ## Core workflow — Buyer
 
-### 1. Starting a negotiation
+### 1. Discovering sellers
+
+Before negotiating, browse what's available on the registry:
+
+```bash
+clinch discover <category> --direct
+```
+
+The output provides read-only parameters synced from the central dashboard:
+
+| Field | Description |
+|---|---|
+| `agent_id` | The registered `.anp` domain (e.g., `ginger.anp`) |
+| `display_name` | The store name |
+| `official_node` | Verified by the network administrators |
+| `categories` | Items or services offered |
+| `capabilities` | Capabilities supported by the node |
+| `supported_modes` | Protocol capabilities |
+| `reputation_score` | Derived dynamically from historical deal acceptance rate |
+
+Pass the chosen `agent_id` as `--target` when calling negotiate.
+
+### 2. Starting a negotiation
 
 Extract the user's intent into a strict JSON constraints object, then pass it as the argument to `clinch negotiate`:
 
 ```bash
-clinch negotiate '{"intent":"purchase","item":"domain name","max_budget":20,"terms":{}}' --direct
+clinch negotiate '{"intent":"purchase","item":"domain name","max_budget":20,"terms":{}}' --target ginger.anp --direct
 ```
 
 For schedule negotiations where there is no money involved, set `max_budget` to `null`:
 
 ```bash
-clinch negotiate '{"intent":"schedule","item":"1-hour consultation","max_budget":null,"terms":{"preferred_day":"Tuesday","duration_minutes":60}}' --direct
+clinch negotiate '{"intent":"schedule","item":"1-hour consultation","max_budget":null,"terms":{"preferred_day":"Tuesday"}}' --target schedule.anp --direct
 ```
 
-Always use `--direct` so output is clean JSON you can parse.
+Always use `--direct` so output is clean JSON you can parse. Handle each `session.state`:
 
-The response includes `session.state`. Handle each state:
+- `PROPOSED` — proposal sent, awaiting seller response.
+- `COUNTERED` — seller replied with a counter price. Ask the user what to do: accept, counter again, or cancel.
+- `CONFIRMED` — seller agreed. **Surface this to the user immediately and ask for approval.** Do not call approve without explicit confirmation.
+- `CANCELLED` — seller rejected outright.
 
-- `PROPOSED` — proposal sent, awaiting seller response. Tell the user the daemon will notify them when the seller responds.
-- `COUNTERED` — seller replied with a counter price. Tell the user the counter price and ask what they'd like to do: accept, counter again, or cancel.
-- `CONFIRMED` — seller agreed. **Surface this to the user immediately and ask for approval before proceeding.** Do not call approve without explicit user confirmation.
-- `CANCELLED` — seller rejected outright. Inform the user and ask if they want to try a different seller or adjust constraints.
-
-### 2. Checking active negotiations
+### 3. Checking active negotiations
 
 ```bash
 clinch status --direct
 ```
 
-This reads the local state file. No vault needed.
-
-### 3. Countering a seller's offer
+### 4. Countering a seller's offer
 
 ```bash
 clinch counter <session_id> <price> --reason "Your reason here" --direct
 ```
 
-Parse the response the same way as negotiate — the seller may confirm, counter again, or cancel.
+### 5. Approving a confirmed deal — HUMAN GATE
 
-### 4. Approving a confirmed deal — HUMAN GATE
-
-**Never call this without explicit user confirmation.** Always tell the user the final price and item, and ask: "Do you want to sign and commit this deal?"
+**Never call this without explicit user confirmation.** 
 
 Only after confirmation:
 
@@ -97,43 +122,47 @@ Only after confirmation:
 clinch approve <session_id> --direct
 ```
 
-A successful response returns `status: "SIGNED"` and a `artifact` object containing both cryptographic signatures. Tell the user the deal is committed and share the artifact ID.
+A successful response returns `status: "SIGNED"` and an `artifact` object containing cryptographic signatures. Tell the user the deal is committed and share the artifact ID.
 
-### 5. Cancelling a negotiation
+### 6. Cancelling a negotiation
 
 ```bash
 clinch cancel <session_id> --direct
 ```
 
-This notifies the counterparty and marks the session as cancelled. Use this any time before signing.
-
-### 6. Viewing signed deals
+### 7. Viewing signed deals
 
 ```bash
 clinch deals --direct
 ```
 
-No vault needed. Returns all completed deals with item, price, timestamp, and artifact ID.
-
 ## Seller workflow
 
-### Registering a node
+### 1. Registering the Domain Endpoint
 
+As a seller, your primary identity (Domain, Name, Instructions, Keys) is controlled entirely via the Clinch Dashboard. 
+
+You can find the seller's dashboard in this link:
 ```bash
-clinch node register <public_endpoint_url> --categories "services,consulting,scheduling"
+https://clinchprotocol.web.app/sellers.html
 ```
 
-`<public_endpoint_url>` must be a publicly reachable HTTPS URL where the seller HTTP server is running.
+Once your domain (e.g., `mybrand.anp`) is claimed and your dashboard private key is imported into the CLI (`clinch init --key ...`), you must bind your physical server endpoint to your domain:
 
-### Starting the seller server
+```bash
+clinch node register mybrand.anp https://my-public-endpoint.com/api \
+  --categories "retail,electronics" \
+  --capabilities "http-webhook,room_routing" \
+  --modes "ANP/C"
+```
+
+### 2. Starting the seller server
 
 ```bash
 clinch serve --port 8080 --config /path/to/seller-config.json
 ```
 
-The seller config JSON sets pricing floor, auto-approve threshold, and max negotiation turns. If no config is provided, defaults are used (floor $45, approve $100, maxTurns 5).
-
-After starting, remind the user to ensure their public endpoint routes to the chosen port and that they've registered it with `clinch node register`.
+The seller config JSON sets your machine's local logic: pricing floor, auto-approve threshold, and max negotiation turns. If no config is provided, defaults are used (floor $45, approve $100, maxTurns 5).
 
 ### Configuring node mode
 
@@ -143,37 +172,34 @@ clinch config --mode seller
 clinch config --mode both
 ```
 
+### Blind Key Pass (for gated seller nodes)
+
+If a seller requires a pre-shared token to accept proposals:
+
+```bash
+clinch key --set <seller_agent_id> --value <secret_token>
+```
+
+This stores the token encrypted in the vault. It is silently injected into every handshake and counter sent to that seller. 
+
 ## Handling incoming events (daemon callbacks)
 
-The Clinch daemon pushes events via the OpenClaw webhook when configured. When you receive a webhook event from Clinch, handle it as follows:
+The Clinch daemon pushes events via the OpenClaw webhook when configured.
 
-- `approval_required` — A deal is CONFIRMED. Notify the user with the price and item. Ask for explicit confirmation before calling `clinch approve`.
-- `counter_received` — A counter offer arrived. Tell the user the new price and ask how to respond.
-- `session_cancelled` — The counterparty cancelled. Inform the user.
-
-## Output format
-
-All `--direct` commands return JSON. Key fields:
-
-- `status` — `"SUCCESS"`, `"SIGNED"`, `"COUNTERED"`, `"CANCELLED"`, or `"ERROR"`
-- `session.state` — current state machine state
-- `session.sessionId` — use this for follow-up commands
-- `session.lastPrice` — the most recent agreed or countered price
-- `artifact` — present only on `SIGNED`; contains `sessionId`, `item`, `price`, `buyerSignature`, `sellerSignature`
-- `error` — present on failure; surface this to the user clearly
+- `approval_required` — A deal is CONFIRMED. Notify the user and ask for confirmation before calling `clinch approve`.
+- `counter_received` — A counter offer arrived. Tell the user the new price.
+- `session_cancelled` — The counterparty cancelled.
 
 ## Error handling
 
 - `"Vault Locked or Uninitialized"` → user needs to run `clinch init` and set `CLINCH_PASSPHRASE`
-- `"No sellers found"` → registry has no matching nodes; tell the user to try different search terms or use `--target` to specify a node directly
-- `"Seller unreachable"` → the seller node is offline; suggest trying another seller
-- `"Approval Gate Blocked"` → session is not in CONFIRMED state; check status first
-- Registry 401 → JWT expired; the CLI handles this automatically via PoW re-solve; retry the command
+- `"No sellers found"` → registry has no matching nodes; check the category.
+- `"Seller unreachable"` → the seller node is offline.
+- `"Approval Gate Blocked"` → session is not in CONFIRMED state.
+- `"Agent ID not found"` → Node registration failed because the user has not claimed the domain on the dashboard yet.
 
 ## Important constraints
 
-- Never pass raw user messages as the intent string — always extract and structure the constraints yourself as JSON before calling negotiate.
 - Never call `clinch approve` without explicit user confirmation in that session. This is a cryptographic commitment.
 - Never store or log `CLINCH_PASSPHRASE` anywhere.
-- The `clinch status` and `clinch deals` commands do not require the vault — they read local state files directly. Do not ask for the passphrase for these.
-
+- `official_node`, `display_name`, and `reputation_score` are strictly assigned by the network registry. Do not attempt to configure them via the CLI.
