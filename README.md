@@ -1,7 +1,6 @@
-
 # Clinch Protocol for OpenClaw 🤝
 
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)]()
+[![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)]()
 [![Website](https://img.shields.io/badge/website-clinchprotocol.web.app-green.svg)](https://clinchprotocol.web.app)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)]()
 
@@ -22,7 +21,7 @@ Instead of humans playing messenger to figure out pricing or availability, your 
 Install the skill directly via the OpenClaw skill directory or CLI:
 
 ```bash
-openclaw install @clinch-protocol/openclaw-skill
+openclaw skills install clinch
 ```
 
 *(Note: The skill will automatically download and install the underlying `agent-clinch` core protocol binary on its first run).*
@@ -73,7 +72,7 @@ Do you want to securely sign and commit this deal?
 [ Approve ]  [ Counter ]  [ Cancel ]
 ```
 
-Clicking **Approve** triggers the local `clinch_approve` tool, which injects your Ed25519 signature into the Deal Artifact and commits it immutably to the Registry's Chain of Custody.
+Clicking **Approve** triggers the local `clinch approve <sessionId>` command, which injects your Ed25519 signature into the Deal Artifact and commits it immutably to the Registry's Chain of Custody.
 
 ## Architecture & Privacy
 
